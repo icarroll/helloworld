@@ -5,27 +5,20 @@
 
 #include <stdio.h>
 
+#include <chrono>
 #include <cmath>
+#include <random>
 #include <string>
+#include <thread>
+#include <vector>
 
-//Screen dimension constants
+using namespace std;
+
 const int SCREEN_WIDTH = 800;
 const int SCREEN_HEIGHT = 800;
 
-//Starts up SDL and creates window
-bool init();
-
-//Frees media and shuts down SDL
-void close();
-
-//Loads individual image as texture
-SDL_Texture* loadTexture( std::string path );
-
-//The window we'll be rendering to
-SDL_Window* gWindow = NULL;
-
-//The window renderer
-SDL_Renderer* gRenderer = NULL;
+SDL_Window * gWindow = NULL;
+SDL_Renderer * gRenderer = NULL;
 
 bool init()
 {
@@ -86,15 +79,80 @@ void close()
     SDL_Quit();
 }
 
-int main( int argc, char* args[] )
+default_random_engine gen;
+uniform_real_distribution<double> dist(0.0, 1.0);
+
+double random(double min, double max) {
+    return dist(gen) * (max - min) + min;
+}
+
+struct dot_t {
+    double x,y;
+    double r;
+    double red, green, blue;
+};
+
+vector<dot_t> dots;
+
+void setup_dots() {
+    for (int ix=0 ; ix<100 ; ix+=1) {
+        dot_t dot = {random(-1,1),random(-1,1),random(0.01,0.05),
+                     random(0,1),random(0,1),random(0,1)};
+        dots.push_back(dot);
+    }
+}
+
+void update_dots() {
+    /*
+    for (auto dot : dots) {
+        dot.x += ran
+    }
+    */
+}
+
+int BLIT_READY;
+
+void drawstuff(cairo_t * cr) {
+    // 0,0 at center of window and 1,1 at top right
+    cairo_scale(cr, SCREEN_WIDTH/2.0, -SCREEN_HEIGHT/2.0);
+    cairo_translate(cr, 1, -1);
+
+    setup_dots();
+
+    while (true) {
+        update_dots();
+
+        cairo_rectangle(cr, -1, -1, 2, 2);
+        cairo_set_source_rgb(cr, 1, 1, 1);
+        cairo_fill(cr);
+
+        cairo_set_line_width(cr, 0.001);
+
+        for (auto dot : dots) {
+            cairo_arc(cr, dot.x, dot.y, dot.r, 0, 2*M_PI);
+
+            cairo_set_source_rgb(cr, dot.red, dot.green, dot.blue);
+            cairo_fill_preserve(cr);
+
+            cairo_set_source_rgb(cr, 0,0,0);
+            cairo_stroke(cr);
+        }
+
+        SDL_Event e;
+        e.type = BLIT_READY;
+        SDL_PushEvent(& e);
+
+        this_thread::sleep_for(chrono::milliseconds(100));
+    }
+}
+
+int main(int nargs, char * args[])
 {
     //Start up SDL and create window
-    if( !init() )
-    {
-        printf( "Failed to initialize!\n" );
+    if (! init()) {
+        printf("Failed to initialize!\n");
     }
-    else
-    {
+    else {
         SDL_Surface * sdlsurf = SDL_CreateRGBSurface(
             0, SCREEN_WIDTH, SCREEN_HEIGHT, 32,
             0x00FF0000, // red
@@ -102,7 +160,7 @@ int main( int argc, char* args[] )
             0x000000FF, // blue
             0); // alpha
 
-        // ... make sure sdlsurf is locked or doesn't need locking ...
+        //TODO make sure sdlsurf is locked or doesn't need locking
 
         cairo_surface_t * csurf = cairo_image_surface_create_for_data(
             (unsigned char *) sdlsurf->pixels,
@@ -111,50 +169,10 @@ int main( int argc, char* args[] )
             sdlsurf->h,
             sdlsurf->pitch);
 
-        // ... normal cairo calls ...
         cairo_t * cr = cairo_create(csurf);
 
-        cairo_scale(cr, SCREEN_WIDTH, SCREEN_HEIGHT);
-
-        cairo_rectangle(cr, 0, 0, 1, 1);
-        cairo_set_source_rgba(cr, 1, 1, 1, 1);
-        cairo_fill(cr);
-
-        int i, j;
-        cairo_pattern_t *radpat, *linpat;
-
-        radpat = cairo_pattern_create_radial(0.25, 0.25, 0.1,  0.5, 0.5, 0.5);
-        cairo_pattern_add_color_stop_rgb(radpat, 0,  1.0, 0.8, 0.8);
-        cairo_pattern_add_color_stop_rgb(radpat, 1,  0.9, 0.0, 0.0);
-
-        for (i=1; i<10; i++) {
-            for (j=1; j<10; j++) {
-                float x = i/10.0 - 0.04;
-                float y = j/10.0 - 0.04;
-                cairo_rectangle(cr, x, y, 0.08, 0.08);
-                cairo_new_sub_path(cr);
-                cairo_arc(cr, x+0.04, y+0.04, 0.03, 0, 2*M_PI);
-            }
-        }
-        cairo_set_source(cr, radpat);
-        cairo_set_fill_rule(cr, CAIRO_FILL_RULE_EVEN_ODD);
-        cairo_fill(cr);
-
-        linpat = cairo_pattern_create_linear(0.25, 0.35, 0.75, 0.65);
-        cairo_pattern_add_color_stop_rgba(linpat, 0.00,  1, 1, 1, 0);
-        cairo_pattern_add_color_stop_rgba(linpat, 0.25,  0, 1, 0, 0.5);
-        cairo_pattern_add_color_stop_rgba(linpat, 0.50,  1, 1, 1, 0);
-        cairo_pattern_add_color_stop_rgba(linpat, 0.75,  0, 0, 1, 0.5);
-        cairo_pattern_add_color_stop_rgba(linpat, 1.00,  1, 1, 1, 0);
-
-        cairo_rectangle(cr, 0.0, 0.0, 1, 1);
-        cairo_set_source(cr, linpat);
-        cairo_fill(cr);
-
-        // blit cairo surface to window surface
-        SDL_Surface * wsurf = SDL_GetWindowSurface(gWindow);
-        SDL_BlitSurface(sdlsurf, NULL, wsurf, NULL);
-        SDL_UpdateWindowSurface(gWindow);
+        BLIT_READY = SDL_RegisterEvents(1);
+        thread drawthread(drawstuff, cr);
 
         bool done = false;
         while (! done)
@@ -163,10 +181,16 @@ int main( int argc, char* args[] )
             SDL_WaitEvent(& e); //TODO check for error
 
             if (e.type == SDL_QUIT) done = true;
+            else if (e.type == BLIT_READY) {
+                SDL_Surface * wsurf = SDL_GetWindowSurface(gWindow);
+                SDL_BlitSurface(sdlsurf, NULL, wsurf, NULL);
+                SDL_UpdateWindowSurface(gWindow);
+            }
         }
+
+        drawthread.detach();
     }
 
-    //Free resources and close SDL
     close();
 
     return 0;
