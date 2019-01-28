@@ -86,28 +86,63 @@ double random(double min, double max) {
     return dist(gen) * (max - min) + min;
 }
 
+enum kind_t {
+    NONE,
+    DOT,
+    BLOB,
+};
+
+const double DOT_R = 0.01;
+const double BLOB_R = 0.1;
+
 struct dot_t {
     double x,y;
-    double r;
-    double red, green, blue;
+    double dx,dy;
+    kind_t k;
 };
 
 vector<dot_t> dots;
 
 void setup_dots() {
-    for (int ix=0 ; ix<100 ; ix+=1) {
-        dot_t dot = {random(-1,1),random(-1,1),random(0.01,0.05),
-                     random(0,1),random(0,1),random(0,1)};
+    for (int n=0 ; n<100 ; n+=1) {
+        kind_t kind = n >= 50 ? DOT : BLOB;
+        dot_t dot = {random(-1,1),random(-1,1), 0,0, kind};
         dots.push_back(dot);
     }
 }
 
 void update_dots() {
-    /*
-    for (auto dot : dots) {
-        dot.x += ran
+    for (auto & dot : dots) {
+        for (auto & odot : dots) {
+            double dx = dot.x - odot.x;
+            double dy = dot.y - odot.y;
+            double dist2 = dx*dx + dy*dy;
+            if (dist2 == 0) continue;
+
+            double magn = 1e-7 * 1/dist2;
+            if (dot.k != odot.k) {
+                if (dist2 > BLOB_R*BLOB_R) magn *= -1;
+                else magn = -1e-7 * 1/(BLOB_R*BLOB_R) * sqrt(dist2)/BLOB_R;
+            }
+
+            double ax = magn * (dx*dx / dist2);
+            if (dot.x < odot.x) ax *= -1;
+            dot.dx += ax;
+            double ay = magn * (dy*dy / dist2);
+            if (dot.y < odot.y) ay *= -1;
+            dot.dy += ay;
+
+            dot.dx *= 0.99999;
+            dot.dy *= 0.99999;
+        }
     }
-    */
+
+    for (auto & dot : dots) {
+        dot.x += dot.dx;
+        dot.y += dot.dy;
+        if (dot.x < -1 || dot.x > 1) dot.dx *= -1;
+        if (dot.y < -1 || dot.y > 1) dot.dy *= -1;
+    }
 }
 
 int BLIT_READY;
@@ -129,9 +164,11 @@ void drawstuff(cairo_t * cr) {
         cairo_set_line_width(cr, 0.001);
 
         for (auto dot : dots) {
-            cairo_arc(cr, dot.x, dot.y, dot.r, 0, 2*M_PI);
+            double radius = dot.k == DOT ? DOT_R : BLOB_R;
+            cairo_arc(cr, dot.x, dot.y, radius, 0, 2*M_PI);
 
-            cairo_set_source_rgb(cr, dot.red, dot.green, dot.blue);
+            if (dot.k == DOT) cairo_set_source_rgb(cr, 0,0,1);
+            else cairo_set_source_rgba(cr, 1,1,0,0.5);
             cairo_fill_preserve(cr);
 
             cairo_set_source_rgb(cr, 0,0,0);
@@ -142,7 +179,7 @@ void drawstuff(cairo_t * cr) {
         e.type = BLIT_READY;
         SDL_PushEvent(& e);
 
-        this_thread::sleep_for(chrono::milliseconds(100));
+        this_thread::sleep_for(chrono::milliseconds(10));
     }
 }
 
