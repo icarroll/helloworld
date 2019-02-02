@@ -1,81 +1,49 @@
-#include <SDL.h>
-#include <SDL_image.h>
-
-#include <cairo.h>
-
-#include <stdio.h>
-
 #include <chrono>
 #include <cmath>
+#include <iostream>
 #include <random>
 #include <string>
 #include <thread>
 #include <vector>
+
+#include <chipmunk.h>
+
+extern "C" {
+#include <SDL.h>
+#include <cairo.h>
+
+#include <stdio.h>
+}
 
 using namespace std;
 
 const int SCREEN_WIDTH = 800;
 const int SCREEN_HEIGHT = 800;
 
+char WINDOW_NAME[] = "dots!";
 SDL_Window * gWindow = NULL;
-SDL_Renderer * gRenderer = NULL;
 
-bool init()
+void die(string message) {
+    printf("%s\n", message);
+    exit(1);
+}
+
+void init()
 {
-    //Initialization flag
-    bool success = true;
+    if (SDL_Init(SDL_INIT_VIDEO) < 0) die("SDL");
+    if (! SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1")) die("texture");
 
-    //Initialize SDL
-    if( SDL_Init( SDL_INIT_VIDEO ) < 0 )
-    {
-        printf( "SDL could not initialize! SDL Error: %s\n", SDL_GetError() );
-        success = false;
-    }
-    else
-    {
-        //Set texture filtering to linear
-        if( !SDL_SetHint( SDL_HINT_RENDER_SCALE_QUALITY, "1" ) )
-        {
-            printf( "Warning: Linear texture filtering not enabled!" );
-        }
-
-        //Create window
-        gWindow = SDL_CreateWindow( "dots!", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN );
-        if( gWindow == NULL )
-        {
-            printf( "Window could not be created! SDL Error: %s\n", SDL_GetError() );
-            success = false;
-        }
-        else
-        {
-            //Create renderer for window
-            gRenderer = SDL_CreateRenderer( gWindow, -1, SDL_RENDERER_ACCELERATED );
-            if( gRenderer == NULL )
-            {
-                printf( "Renderer could not be created! SDL Error: %s\n", SDL_GetError() );
-                success = false;
-            }
-            else
-            {
-                //Initialize renderer color
-                SDL_SetRenderDrawColor( gRenderer, 0xFF, 0xFF, 0xFF, 0xFF );
-
-            }
-        }
-    }
-
-    return success;
+    gWindow = SDL_CreateWindow(WINDOW_NAME, SDL_WINDOWPOS_UNDEFINED,
+                               SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH,
+                               SCREEN_HEIGHT, SDL_WINDOW_SHOWN );
+    if (gWindow == NULL) die("window");
 }
 
 void close()
 {
-    //Destroy window    
-    SDL_DestroyRenderer( gRenderer );
-    SDL_DestroyWindow( gWindow );
+    SDL_DestroyWindow(gWindow);
     gWindow = NULL;
-    gRenderer = NULL;
 
-    //Quit SDL subsystems
     SDL_Quit();
 }
 
@@ -96,53 +64,34 @@ const double DOT_R = 0.01;
 const double BLOB_R = 0.1;
 
 struct dot_t {
-    double x,y;
-    double dx,dy;
     kind_t k;
+    cpBody * rbody;
 };
+
+cpSpace * space;
 
 vector<dot_t> dots;
 
 void setup_dots() {
     for (int n=0 ; n<100 ; n+=1) {
         kind_t kind = n >= 50 ? DOT : BLOB;
-        dot_t dot = {random(-1,1),random(-1,1), 0,0, kind};
+        cpFloat radius = (kind == DOT) ? DOT_R : BLOB_R;
+        cpFloat mass = 1;
+        cpFloat moment = cpMomentForCircle(mass, 0, radius, cpvzero);
+        cpBody * body = cpSpaceAddBody(space, cpBodyNew(mass, moment));
+        cpFloat x = random(-1,1);
+        cpFloat y = random(-1,1);
+        cpBodySetPosition(body, cpv(x, y));
+        cpShape * s = cpSpaceAddShape(space, cpCircleShapeNew(body, radius, cpvzero));
+        cpShapeSetFriction(s, 0.7);
+
+        dot_t dot = {kind, body};
         dots.push_back(dot);
     }
 }
 
 void update_dots() {
-    for (auto & dot : dots) {
-        for (auto & odot : dots) {
-            double dx = dot.x - odot.x;
-            double dy = dot.y - odot.y;
-            double dist2 = dx*dx + dy*dy;
-            if (dist2 == 0) continue;
-
-            double magn = 1e-7 * 1/dist2;
-            if (dot.k != odot.k) {
-                if (dist2 > BLOB_R*BLOB_R) magn *= -1;
-                else magn = -1e-7 * 1/(BLOB_R*BLOB_R) * sqrt(dist2)/BLOB_R;
-            }
-
-            double ax = magn * (dx*dx / dist2);
-            if (dot.x < odot.x) ax *= -1;
-            dot.dx += ax;
-            double ay = magn * (dy*dy / dist2);
-            if (dot.y < odot.y) ay *= -1;
-            dot.dy += ay;
-
-            dot.dx *= 0.99999;
-            dot.dy *= 0.99999;
-        }
-    }
-
-    for (auto & dot : dots) {
-        dot.x += dot.dx;
-        dot.y += dot.dy;
-        if (dot.x < -1 || dot.x > 1) dot.dx *= -1;
-        if (dot.y < -1 || dot.y > 1) dot.dy *= -1;
-    }
+    cpSpaceStep(space, 10.0 / 1000.0);
 }
 
 int BLIT_READY;
@@ -163,9 +112,10 @@ void drawstuff(cairo_t * cr) {
 
         cairo_set_line_width(cr, 0.001);
 
-        for (auto dot : dots) {
+        for (dot_t & dot : dots) {
             double radius = dot.k == DOT ? DOT_R : BLOB_R;
-            cairo_arc(cr, dot.x, dot.y, radius, 0, 2*M_PI);
+            cpVect pos = cpBodyGetPosition(dot.rbody);
+            cairo_arc(cr, pos.x, pos.y, radius, 0, 2*M_PI);
 
             if (dot.k == DOT) cairo_set_source_rgb(cr, 0,0,1);
             else cairo_set_source_rgba(cr, 1,1,0,0.5);
@@ -185,48 +135,54 @@ void drawstuff(cairo_t * cr) {
 
 int main(int nargs, char * args[])
 {
-    //Start up SDL and create window
-    if (! init()) {
-        printf("Failed to initialize!\n");
-    }
-    else {
-        SDL_Surface * sdlsurf = SDL_CreateRGBSurface(
-            0, SCREEN_WIDTH, SCREEN_HEIGHT, 32,
-            0x00FF0000, // red
-            0x0000FF00, // green
-            0x000000FF, // blue
-            0); // alpha
+    // set up physics
+    cpVect gravity = cpv(0, -0.1);
+    space = cpSpaceNew();
+    cpSpaceSetGravity(space, gravity);
+    cpShape * ground = cpSegmentShapeNew(cpSpaceGetStaticBody(space),
+                                         cpv(-1,-1), cpv(1, -1), 0);
+    cpShapeSetFriction(ground, 1);
+    cpSpaceAddShape(space, ground);
 
-        //TODO make sure sdlsurf is locked or doesn't need locking
+    init();
 
-        cairo_surface_t * csurf = cairo_image_surface_create_for_data(
-            (unsigned char *) sdlsurf->pixels,
-            CAIRO_FORMAT_RGB24,
-            sdlsurf->w,
-            sdlsurf->h,
-            sdlsurf->pitch);
+    SDL_Surface * sdlsurf = SDL_CreateRGBSurface(
+        0, SCREEN_WIDTH, SCREEN_HEIGHT, 32,
+        0x00FF0000, // red
+        0x0000FF00, // green
+        0x000000FF, // blue
+        0); // alpha
 
-        cairo_t * cr = cairo_create(csurf);
+    //TODO make sure sdlsurf is locked or doesn't need locking
 
-        BLIT_READY = SDL_RegisterEvents(1);
-        thread drawthread(drawstuff, cr);
+    cairo_surface_t * csurf = cairo_image_surface_create_for_data(
+        (unsigned char *) sdlsurf->pixels,
+        CAIRO_FORMAT_RGB24,
+        sdlsurf->w,
+        sdlsurf->h,
+        sdlsurf->pitch);
 
-        bool done = false;
-        while (! done)
-        {
-            SDL_Event e;
-            SDL_WaitEvent(& e); //TODO check for error
+    cairo_t * cr = cairo_create(csurf);
 
-            if (e.type == SDL_QUIT) done = true;
-            else if (e.type == BLIT_READY) {
-                SDL_Surface * wsurf = SDL_GetWindowSurface(gWindow);
-                SDL_BlitSurface(sdlsurf, NULL, wsurf, NULL);
-                SDL_UpdateWindowSurface(gWindow);
-            }
+    BLIT_READY = SDL_RegisterEvents(1);
+    thread drawthread(drawstuff, cr);
+
+    SDL_Surface * wsurf = SDL_GetWindowSurface(gWindow);
+
+    bool done = false;
+    while (! done)
+    {
+        SDL_Event e;
+        SDL_WaitEvent(& e); //TODO check for error
+
+        if (e.type == SDL_QUIT) done = true;
+        else if (e.type == BLIT_READY) {
+            SDL_BlitSurface(sdlsurf, NULL, wsurf, NULL);
+            SDL_UpdateWindowSurface(gWindow);
         }
-
-        drawthread.detach();
     }
+
+    drawthread.detach();
 
     close();
 
