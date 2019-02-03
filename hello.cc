@@ -20,7 +20,7 @@ using namespace std;
 const int SCREEN_WIDTH = 800;
 const int SCREEN_HEIGHT = 800;
 
-char WINDOW_NAME[] = "dots!";
+char WINDOW_NAME[] = "Hello, World!";
 SDL_Window * gWindow = NULL;
 
 void die(string message) {
@@ -54,45 +54,7 @@ double random(double min, double max) {
     return dist(gen) * (max - min) + min;
 }
 
-enum kind_t {
-    NONE,
-    DOT,
-    BLOB,
-};
-
-const double DOT_R = 0.01;
-const double BLOB_R = 0.1;
-
-struct dot_t {
-    kind_t k;
-    cpBody * rbody;
-};
-
 cpSpace * space;
-
-vector<dot_t> dots;
-
-void setup_dots() {
-    for (int n=0 ; n<100 ; n+=1) {
-        kind_t kind = n >= 50 ? DOT : BLOB;
-        cpFloat radius = (kind == DOT) ? DOT_R : BLOB_R;
-        cpFloat mass = 1;
-        cpFloat moment = cpMomentForCircle(mass, 0, radius, cpvzero);
-        cpBody * body = cpSpaceAddBody(space, cpBodyNew(mass, moment));
-        cpFloat x = random(-1,1);
-        cpFloat y = random(-1,1);
-        cpBodySetPosition(body, cpv(x, y));
-        cpShape * s = cpSpaceAddShape(space, cpCircleShapeNew(body, radius, cpvzero));
-        cpShapeSetFriction(s, 0.7);
-
-        dot_t dot = {kind, body};
-        dots.push_back(dot);
-    }
-}
-
-void update_dots() {
-    cpSpaceStep(space, 10.0 / 1000.0);
-}
 
 int BLIT_READY;
 
@@ -101,42 +63,86 @@ void drawstuff(cairo_t * cr) {
     cairo_scale(cr, SCREEN_WIDTH/2.0, -SCREEN_HEIGHT/2.0);
     cairo_translate(cr, 1, -1);
 
-    setup_dots();
+    // static body
+    cpBody * body0 = cpSpaceAddBody(space, cpBodyNewStatic());
+    cpBodySetPosition(body0, cpv(0, 1));
+
+    cpFloat mass = 1;
+    cpFloat radius = 0.1;
+    cpFloat moment = cpMomentForCircle(mass, 0, radius, cpvzero);
+
+    // "Hello,"
+    cpBody * body1 = cpSpaceAddBody(space, cpBodyNew(mass, moment));
+    cpBodySetPosition(body1, cpv(0.5, 0.5));
+
+    // "World!"
+    cpBody * body2 = cpSpaceAddBody(space, cpBodyNew(mass, moment));
+    cpBodySetPosition(body2, cpv(0.5, 0));
+
+    cpSpaceAddConstraint(space, cpDampedSpringNew(body0, body1, cpv(0,0), cpv(0,0.01), 0.667, 30, 0.1));
+    cpSpaceAddConstraint(space, cpDampedSpringNew(body1, body2, cpv(0,-0.01), cpv(0,0.01), 0.667, 30, 0.1));
 
     while (true) {
-        update_dots();
+        cpSpaceStep(space, 20 / 1000.0);
 
+        // clear screen
         cairo_rectangle(cr, -1, -1, 2, 2);
         cairo_set_source_rgb(cr, 1, 1, 1);
         cairo_fill(cr);
 
+        cairo_select_font_face(cr, "Georgia", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+        cairo_set_font_size(cr, 0.1);
+
+        // Hello,
+        cairo_text_extents_t te1;
+        cairo_text_extents(cr, "Hello,", & te1);
+        cairo_set_source_rgb(cr, 0,0,1);
+        cpVect pos1 = cpBodyGetPosition(body1);
+        cpFloat rot1 = cpBodyGetAngle(body1);
+        cairo_move_to(cr, pos1.x, pos1.y);
+        cairo_save(cr);
+        cairo_scale(cr, 2, -2);
+        cairo_rotate(cr, rot1);
+        cairo_rel_move_to(cr, -te1.width/2, te1.height/2);
+        cairo_text_path(cr, "Hello,");
+        cairo_restore(cr);
+
+        cairo_fill_preserve(cr);
         cairo_set_line_width(cr, 0.001);
+        cairo_set_source_rgb(cr, 0,0,0);
+        cairo_stroke(cr);
 
-        for (dot_t & dot : dots) {
-            double radius = dot.k == DOT ? DOT_R : BLOB_R;
-            cpVect pos = cpBodyGetPosition(dot.rbody);
-            cairo_arc(cr, pos.x, pos.y, radius, 0, 2*M_PI);
+        // World!
+        cairo_text_extents_t te2;
+        cairo_text_extents(cr, "World!", & te2);
+        cairo_set_source_rgb(cr, 0,1,0);
+        cpVect pos2 = cpBodyGetPosition(body2);
+        cpFloat rot2 = cpBodyGetAngle(body2);
+        cairo_move_to(cr, pos2.x, pos2.y);
+        cairo_save(cr);
+        cairo_scale(cr, 2, -2);
+        cairo_rotate(cr, rot2);
+        cairo_rel_move_to(cr, -te2.width/2, te2.height/2);
+        cairo_text_path(cr, "World!");
+        cairo_restore(cr);
 
-            if (dot.k == DOT) cairo_set_source_rgb(cr, 0,0,1);
-            else cairo_set_source_rgba(cr, 1,1,0,0.5);
-            cairo_fill_preserve(cr);
-
-            cairo_set_source_rgb(cr, 0,0,0);
-            cairo_stroke(cr);
-        }
+        cairo_fill_preserve(cr);
+        cairo_set_line_width(cr, 0.001);
+        cairo_set_source_rgb(cr, 0,0,0);
+        cairo_stroke(cr);
 
         SDL_Event e;
         e.type = BLIT_READY;
         SDL_PushEvent(& e);
 
-        this_thread::sleep_for(chrono::milliseconds(10));
+        this_thread::sleep_for(chrono::milliseconds(20));
     }
 }
 
 int main(int nargs, char * args[])
 {
     // set up physics
-    cpVect gravity = cpv(0, -0.1);
+    cpVect gravity = cpv(0, -1);
     space = cpSpaceNew();
     cpSpaceSetGravity(space, gravity);
     cpShape * ground = cpSegmentShapeNew(cpSpaceGetStaticBody(space),
