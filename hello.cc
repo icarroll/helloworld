@@ -70,6 +70,7 @@ void drawstuff(cairo_t * cr) {
 
     // walls
     //TODO simplify this
+    /*
     cpShape * ceiling = cpSegmentShapeNew(cpSpaceGetStaticBody(space),
                                           cpv(-1,1), cpv(1, 1), 0);
     cpShapeSetFriction(ceiling, 0);
@@ -86,6 +87,7 @@ void drawstuff(cairo_t * cr) {
                                         cpv(-1,-1), cpv(1, -1), 0);
     cpShapeSetFriction(floor, 0);
     cpSpaceAddShape(space, floor);
+    */
 
     // static body
     cpBody * body0 = cpSpaceAddBody(space, cpBodyNewStatic());
@@ -101,11 +103,11 @@ void drawstuff(cairo_t * cr) {
     cairo_text_extents(cr, "Hello,", & te1);
     cpFloat mass1 = 1;
     cpFloat moment1 = cpMomentForBox(mass1, te1.width, te1.height);
-    cpBody * body1 = cpSpaceAddBody(space, cpBodyNew(mass1, moment1));
-    cpShape * shape1 = cpSpaceAddShape(space, cpBoxShapeNew(body1, te1.width, te1.height, 0.001));
-    cpShapeSetElasticity(shape1, 0.999999);
-    cpBodySetPosition(body1, cpv(0.5, 0.5));
-    cpShapeSetFriction(shape1, 0.0);
+    cpBody * body1 = cpSpaceAddBody(space, cpBodyNew(mass1, moment1/2));
+    //cpShape * shape1 = cpSpaceAddShape(space, cpBoxShapeNew(body1, te1.width, te1.height, 0.001));
+    //cpShapeSetElasticity(shape1, 0.999999);
+    cpBodySetPosition(body1, cpv(0.5, 0.75));
+    //cpShapeSetFriction(shape1, 0.0);
 
     /*
     vector<cpVect> dots = {cpv(0.25-te1.width/2,0.25-te1.height/2),
@@ -119,11 +121,11 @@ void drawstuff(cairo_t * cr) {
     cairo_text_extents(cr, "World!", & te2);
     cpFloat mass2 = 1;
     cpFloat moment2 = cpMomentForBox(mass2, te2.width, te2.height);
-    cpBody * body2 = cpSpaceAddBody(space, cpBodyNew(mass2, moment2));
-    cpShape * shape2 = cpSpaceAddShape(space, cpBoxShapeNew(body2, te2.width, te2.height, 0.001));
-    cpShapeSetElasticity(shape2, 0.999999);
-    cpBodySetPosition(body2, cpv(0.5, 0));
-    cpShapeSetFriction(shape2, 0.0);
+    cpBody * body2 = cpSpaceAddBody(space, cpBodyNew(mass2, moment2/2));
+    //cpShape * shape2 = cpSpaceAddShape(space, cpBoxShapeNew(body2, te2.width, te2.height, 0.001));
+    //cpShapeSetElasticity(shape2, 0.999999);
+    cpBodySetPosition(body2, cpv(0.5, 0.333));
+    //cpShapeSetFriction(shape2, 0.0);
 
     // springs
     cpSpaceAddConstraint(space, cpDampedSpringNew(body0, body1, cpv(0,0), cpv(0,0.01), 0.667, 30, 0.0001));
